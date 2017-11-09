@@ -1,0 +1,154 @@
+---
+- hosts: all
+  vars:
+    # Fill all this in! For the passwords, use the following to get a nice salty hash. Delicious.
+    #
+    # $ mkpasswd -m sha-512
+    COMMON_ROOT_PASSWORD: ''
+    COMMON_DEPLOY_PASSWORD: ''
+    COMMON_ADMIN_PASSWORD: ''
+    COMMON_LOGWATCH_EMAIL: ''
+    common_admin_user_name: ''
+    common_admin_public_keys:
+      - ~/.ssh/id_rsa.pub
+    common_deploy_user_name: 'deploy'
+    common_deploy_public_keys:
+      - ~/.ssh/id_rsa_deploy.pub
+
+    common_required_packages:
+      - ufw
+      - fail2ban
+      - unattended-upgrades
+      - logwatch
+
+    common_optional_packages:
+      - mosh
+      - vim
+      - emacs
+      - git
+      - docker.io
+
+    common_ssh_port: 22
+    common_mosh_from_port: 60000
+    common_mosh_to_port: 60010
+
+  remote_user: root
+  gather_facts: no
+  pre_tasks:
+    - name: Install python2 to satisfy ansible dependencies
+      raw: sudo apt-get -y install python-simplejson
+
+  tasks:
+    - name: Change password for root user
+      user: name=root
+            password="{{ COMMON_ROOT_PASSWORD }}"
+
+    - name: Add admin user
+      user: name={{ common_admin_user_name }}
+            password="{{ COMMON_ADMIN_PASSWORD }}"
+            shell=/bin/bash
+            state=present
+
+    - name: Add SSH keys for admin user
+      authorized_key: user={{ common_admin_user_name }}
+                      key="{{ lookup('file', item) }}"
+      with_items: "{{ common_admin_public_keys }}"
+
+    - name: Add admin user to sudoers
+      lineinfile: dest=/etc/sudoers
+                  regexp="{{ common_admin_user_name }}"
+                  line="{{ common_admin_user_name }} ALL=(ALL) ALL"
+                  state=present
+
+    - name: Add deploy user
+      user: name={{ common_deploy_user_name }}
+            password="{{ COMMON_DEPLOY_PASSWORD }}"
+            shell=/bin/bash
+
+    - name: Add SSH keys for deploy user
+      authorized_key: user={{ common_deploy_user_name }}
+                      key="{{ lookup('file', item) }}"
+      with_items: "{{ common_deploy_public_keys }}"
+
+    - name: Add deploy user to sudoers
+      lineinfile: dest=/etc/sudoers
+                  regexp="{{ common_deploy_user_name }}"
+                  line="{{ common_deploy_user_name }} ALL=(ALL) ALL"
+                  state=present
+
+    - name: Update APT package cache
+      apt: update_cache=yes
+           cache_valid_time=3600
+
+    - name: Upgrade APT packages
+      apt: upgrade=safe
+
+    - name: Install required security packages
+      apt: state=installed
+           pkg={{ item }}
+      with_items: "{{ common_required_packages }}"
+
+    - name: Install optional packages
+      apt: state=installed
+           pkg={{ item }}
+      with_items: "{{ common_optional_packages }}"
+
+    - name: Adjust APT update intervals
+      copy: src=apt_periodic
+            dest=/etc/apt/apt.conf.d/10periodic
+
+    - name: Email log summary - daily
+      lineinfile: dest=/etc/cron.daily/00logwatch
+                  regexp="^/usr/sbin/logwatch"
+                  line="/usr/sbin/logwatch --output mail --mailto {{ COMMON_LOGWATCH_EMAIL }} --detail high"
+                  state=present
+                  create=yes
+
+    - name: Allow mosh traffic through ufw
+      ufw: rule=allow
+           proto=udp
+           port={{ common_mosh_from_port }}:{{ common_mosh_to_port }}
+      when: "'mosh' in common_optional_packages"
+
+    - name: Change SSH port
+      lineinfile: dest=/etc/ssh/sshd_config
+                  regexp="^Port\s"
+                  line="Port {{ common_ssh_port }}"
+                  state=present
+      notify: Restart ssh
+
+    - name: Allow SSH traffic through ufw
+      ufw: rule=allow
+           port={{ common_ssh_port }}
+           proto=tcp
+
+    - name: Setup ufw - deny all traffic
+      ufw: state=enabled
+           policy=deny
+
+    - name: Disallow password authentication
+      lineinfile: dest=/etc/ssh/sshd_config
+                  regexp="^PasswordAuthentication"
+                  line="PasswordAuthentication no"
+                  state=present
+      notify: Restart ssh
+
+    - name: Disallow SSH access for root user
+      lineinfile: dest=/etc/ssh/sshd_config
+                  regexp="^PermitRootLogin"
+                  line="PermitRootLogin no"
+                  state=present
+      notify: Restart ssh
+
+    # On servers with <1GB of RAM it would be nice to automate these commands, which I gnerally
+    # use when some install or command fails due to memory exhaustion:
+    #
+    # dd if=/dev/zero of=/var/swap bs=1k count=1024k
+    # mkswap /var/swap
+    # swapon /var/swap
+    # echo '/var/swap swap swap default 0 0' >> /etc/fstab
+
+  handlers:
+    - name: Restart ssh
+      service: name=ssh
+               state=restarted
