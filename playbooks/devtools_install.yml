@@ -1,0 +1,25 @@
+- hosts: all
+  vars:
+    REMOTE_USER: daniel
+    PACKAGES:
+      - build-essential
+      - vim
+      - git
+      - docker.io
+      - mosh
+    MOSH_FROM_PORT: 60000
+    MOSH_TO_PORT: 60010
+  
+  remote_user: "{{ REMOTE_USER }}"
+  gather_facts: no
+  tasks:
+    - name: Install devtools packages
+      apt: state=installed
+           pkg={{ item }}
+      with_items: "{{ PACKAGES }}"
+    
+    - name: Allow mosh traffic through ufw
+      ufw: rule=allow
+           proto=udp
+           port={{ MOSH_FROM_PORT }}:{{ MOST_TO_PORT }}
+      when: "'mosh' in OPTIONAL_PACKAGES"
