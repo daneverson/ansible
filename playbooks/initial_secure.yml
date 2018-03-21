@@ -2,7 +2,6 @@
 - hosts: all
   vars:
     # Fill all this in! For the passwords, use the following to get a nice salty hash. Delicious.
-    #
     # $ mkpasswd -m sha-512
     COMMON_ROOT_PASSWORD: ''
     COMMON_DEPLOY_PASSWORD: ''
@@ -35,8 +34,8 @@
   remote_user: root
   gather_facts: no
   pre_tasks:
-    - name: Install python2 to satisfy ansible dependencies
-      raw: sudo apt-get -y install python-simplejson
+    - name: "FIX: Later Ubuntu versions do not come with packages required by ansible"
+      raw: sudo apt-get -y install python-minimal aptitude
 
   tasks:
     - name: Change password for root user
@@ -140,6 +139,8 @@
                   state=present
       notify: Restart ssh
 
+    # TODO:
+    #
     # On servers with <1GB of RAM it would be nice to automate these commands, which I gnerally
     # use when some install or command fails due to memory exhaustion:
     #
@@ -147,6 +148,8 @@
     # mkswap /var/swap
     # swapon /var/swap
     # echo '/var/swap swap swap default 0 0' >> /etc/fstab
+
+    # ssh-keygen
 
   handlers:
     - name: Restart ssh

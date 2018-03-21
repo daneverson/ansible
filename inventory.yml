@@ -1,0 +1,10 @@
+webservers:
+  hosts:
+    crankshaft:
+      ansible_host: 138.68.224.132
+    gould:
+      ansible_host: 198.199.118.145
+dbservers:
+  hosts:
+    garage:
+      ansible_host: 159.65.74.191
